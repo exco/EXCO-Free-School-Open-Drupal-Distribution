@@ -1,0 +1,109 @@
+/* $Id: advanced_profile.css,v 1.2.4.7 2009/05/11 03:22:29 michellec Exp $ */
+
+/**
+ * @file
+ * Contains styling for the user page when overridden by APK.
+*/
+
+/*** ROUNDED PANES ***********************************************************/
+#user-profile .wrap-corner .r-edge {
+  padding: 1px 10px;
+}
+
+/*** SECTION HEADINGS ********************************************************/
+
+#user-profile .panel-pane h2.title {
+  background: #A8A8A8;
+  color: #ffffff;
+  font-size: 120%;
+  font-weight: bold;
+  padding: 3px 0px 3px 5px;
+}
+
+/*** DEFAULT PANES ***********************************************************/
+
+#user-profile #profile-author-pane {
+}
+
+#user-profile #profile-contact{
+}
+
+#user-profile #profile-links {
+}
+
+#user-profile #profile-stats {
+}
+
+#user-profile #profile-comments {
+}
+
+#user-profile #profile-comment-form {
+}
+
+#user-profile #profile-about {
+}
+
+#user-profile #profile-topics {
+}
+
+#user-profile #profile-friends {
+}
+
+#user-profile #profile-friends td {
+  text-align: center;
+}
+
+#user-profile #profile-friends img {
+  max-width: 85px;
+}
+
+
+
+/*** AUTHOR PANE  ************************************************************/
+
+#user-profile .author-pane .author-pane-label {
+  font-weight: bold;
+}
+
+#user-profile .author-pane-name-status .picture img {
+  border: 1px solid #CCCCCC;
+  height: auto;
+  padding: 8px;
+  max-width: 120px;
+}
+
+/*** USER LIST VIEW **********************************************************/
+
+.user-list-item {
+  border: 1px solid #CCCCCC;
+  margin-bottom: 10px;
+  padding: 10px;
+}
+
+.user-list-author-pane {
+  float: left;
+  margin-right: 10px;
+}
+
+.user-list-item .author-name {
+  padding-bottom: 5px;
+}
+
+.user-list-item .author-name a {
+  font-size: 120%;
+  font-weight: bold;
+}
+
+.user-list-author-pane .picture {
+  float: none;
+  clear: none;
+  padding-left: 0;
+}
+
+.user-list-author-pane .picture img {
+  height: auto;
+  padding: 8px;
+  max-width: 120px;
+  border: 1px solid #CCCCCC;
+}
+

@@ -1,0 +1,276 @@
+<?php
+// $Id: profile_csv.module,v 1.10 2008/07/21 00:47:04 kbahey Exp $
+
+
+define('PROFILE_CSV_STATUS',         'profile_csv_status');
+define('PROFILE_CSV_PARAM',          'profile_csv_param_');
+define('PROFILE_CSV_ROLE',           'profile_csv_role');
+define('PROFILE_CSV_PERM_DOWNLOAD',  'download profiles');
+
+function profile_csv_help($path, $arg) {
+  switch ($path) {
+    case "admin/modules#description":
+      $output = t("Allows exporting profile data in comma separated variable format.");
+      break;
+  }
+  return $output;
+}
+        
+function profile_csv_admin_settings() {  
+ 
+  $set = 'roles';
+  $form[$set] = array(
+  '#type' => 'fieldset',
+  '#title' => t('Roles'),
+  '#description' =>  t('Select one or more roles.'),
+  '#collapsible' => true,
+  '#collapsed' => true,
+  );
+  
+  $u_role = user_roles($membersonly = TRUE);
+  foreach ( $u_role as $rid => $name) {
+    $role = PROFILE_CSV_ROLE . $rid;
+    $form[$set][PROFILE_CSV_ROLE . $rid] = array(
+      '#type' => 'checkbox',
+      '#title' => $name,
+      '#return_value' => 1,
+      '#default_value' => variable_get($role, 0),
+    );
+  }
+  $set = 'status';
+  $form[$set] = array(
+  '#type' => 'fieldset',
+  '#title' => t('User status'),
+  '#description' =>  t('Select one status.'),
+  '#collapsible' => true,
+  '#collapsed' => true,
+  );
+   $form[$set][PROFILE_CSV_STATUS] = array(
+    '#type' => 'select',
+    '#default_value' => variable_get(PROFILE_CSV_STATUS, 2),
+    '#options' => array( 1 => t('active'), 0 => t('blocked'), 2 => t('both')),
+    '#description' => t(''),
+  );
+  
+  $set = 'fields';
+    $form[$set] = array(
+    '#type' => 'fieldset',
+    '#title' => t('General'),
+    '#description' =>  t('Select one or more profile fields.'),
+    '#collapsible' => true,
+    '#collapsed' => true,
+  );
+  $form[$set][PROFILE_CSV_PARAM .'uid'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('User ID'),
+    '#return_value' => 1,
+    '#default_value' => variable_get(PROFILE_CSV_PARAM .'uid', 0),
+  );
+  $form[$set][PROFILE_CSV_PARAM .'name'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('User Name'),
+    '#return_value' => 1,
+    '#default_value' => variable_get(PROFILE_CSV_PARAM .'name', 0),
+  );
+  $form[$set][PROFILE_CSV_PARAM .'mail'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('User Email'),
+    '#return_value' => 1,
+    '#default_value' => variable_get(PROFILE_CSV_PARAM .'mail', 0),
+  );
+  
+  $set = 'profile';
+  $form[$set] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Categories'),
+    '#description' =>  t('Select one or more profile fields from categories below.'),
+    '#collapsible' => true,
+    '#collapsed' => true,
+  );
+  
+  $result = db_query("SELECT pf.fid, pf.name, pf.title, pf.category FROM {profile_fields} pf ORDER BY pf.category, pf.weight, pf.title"); 
+  while ($row = db_fetch_object($result)) {
+    $fld = PROFILE_CSV_PARAM .'profile_'. $row->fid;
+    
+    if (!isset($form[$set][$row->category])) {
+      $form[$set][$row->category] = array(
+        '#type' => 'fieldset',
+        '#title' => $row->category,
+        '#collapsible' => true,
+      );
+    }
+    
+     $form[$set][$row->category][$fld] = array(
+        '#type' => 'checkbox',
+        '#title' => $row->title,
+        '#return_value' => 1,
+        '#default_value' => variable_get($fld, 0),
+      );
+  } 
+   return system_settings_form($form);
+}
+
+function profile_csv_perm() {
+  return array(PROFILE_CSV_PERM_DOWNLOAD);
+}
+
+function profile_csv_menu() {
+  $items = array();
+
+  $items['admin/settings/profile_csv'] = array(
+      'title' => 'profile csv',
+      'description' => 'profile csv settings',
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('profile_csv_admin_settings'),
+      'access callback' => 'user_access',
+      'access arguments' => array('administer site configuration'),
+      'type' => MENU_NORMAL_ITEM, // optional
+  );
+    $items['profile_csv'] = array(
+      'title' => 'Profile Export CSV',
+      'page callback' => 'profile_csv_page',
+      'access callback' => 'user_access',
+      'access arguments' => array(PROFILE_CSV_PERM_DOWNLOAD),
+      'type' => MENU_NORMAL_ITEM,
+    );
+  return $items;
+}
+
+function profile_csv_page() {
+  
+  $data = _profile_csv_header();
+  $user_status = variable_get(PROFILE_CSV_STATUS, 2);
+  if (variable_get(PROFILE_CSV_ROLE .'2', 0)) {
+    $result = db_query("SELECT u.uid, u.status FROM {users} u  WHERE u.uid > 1");
+    while ($row = db_fetch_object($result)) {
+      if ($user_status == 2) {
+        $data .= _profile_csv_format_user($row->uid );
+      }
+      else{      
+        if ($user_status == $row->status) {
+          $data .= _profile_csv_format_user($row->uid );
+        }
+      }
+    }
+  }
+  else {
+    $result = db_query("SELECT u.uid, u.status, ur.rid  FROM {users} u
+            INNER JOIN {users_roles} ur ON u.uid = ur.uid
+            WHERE u.uid > 1");
+    $prev_uid = 0;          
+    while ($row = db_fetch_object($result)) {
+      if ((variable_get(PROFILE_CSV_ROLE . $row->rid, 0)) && ($row->uid != $prev_uid)) {
+        if ($user_status == 2) {
+          $data .= _profile_csv_format_user($row->uid );
+        }
+        else{      
+          if ($user_status == $row->status) {
+            $data .= _profile_csv_format_user($row->uid );
+          }
+        }  
+       $prev_uid = $row->uid;
+      } 
+    }    
+  }
+  header("Content-type: text/plain; charset=UTF-8");
+  header("Content-Disposition: attachment; filename=userlist.csv");
+  header("Pragma: no-cache");
+  header("Expires: 0");
+  print $data;
+  exit();  
+}  
+
+function _profile_csv_get_profile_fields() {
+  static $fields;
+  
+  if (!isset($fields)) {
+    $fields = array();
+    $result = db_query('SELECT pf.fid, pf.name, pf.title, pf.type, pf.visibility FROM {profile_fields} pf ORDER BY pf.category, pf.weight, pf.title');
+    while ($row = db_fetch_object($result)) {
+      if (variable_get(PROFILE_CSV_PARAM .'profile_'. $row->fid, 0)) {
+        $fields[] = array('name' => $row->name, 'title' => $row->title, 'type' => $row->type, 'visibility' => $row->visibility);
+      }
+    }
+  }
+  return $fields;  
+}  
+
+function _profile_csv_format_user($uid = 0) { 
+  $user_data = _profile_csv_get_user($uid);
+  $profile_data = _profile_csv_get_profile($uid, $user_data['data']);
+  unset($user_data['data']);
+  $info = array_merge($user_data, $profile_data);
+  //all of the valid fields in ['data'] should have been picked out in _profile_csv_get_profile, so unset it  
+    
+  foreach ($info as $value) {
+    $new_info[] = '"'. str_replace('"', '""', $value) .'"';
+  }
+  if (isset($new_info)) { 
+    $line = implode(",", $new_info);
+  } 
+  $data .= trim($line) ."\n";
+  
+ return $data;
+}
+
+function _profile_csv_get_user($uid = 0) {
+   $users = array();
+   $result = db_query('SELECT u.uid, u.name, u.mail, u.data FROM {users} u WHERE u.uid = %d', $uid);
+   while ($row = db_fetch_object($result)) {
+    if (variable_get(PROFILE_CSV_PARAM .'uid', 0)) 
+      $users[] = $row->uid;
+ 
+    if (variable_get(PROFILE_CSV_PARAM .'name', 0)) 
+      $users[] = $row->name;
+    
+    if (variable_get(PROFILE_CSV_PARAM .'mail', 0)) 
+      $users[] = $row->mail;
+      $users['data'] = unserialize($row->data);
+  } 
+  return $users;  
+}  
+    
+function _profile_csv_get_profile($uid=0, $user_data=NULL) {
+  $profile_fields = _profile_csv_get_profile_fields();  
+  $profile_result = array();
+  foreach ($profile_fields  as $profile_field) {
+    if ($profile_field ['visibility'] == 4) {
+      //$value = try to get it from the $user_data
+      $value = $user_data[$profile_field['name']];
+    } 
+    else {
+      $value = db_result(db_query("SELECT pv.value FROM {profile_fields} pf, {profile_values} pv
+        WHERE pv.fid = pf.fid
+        AND pf.name = '%s'
+        AND pv.uid = %d", $profile_field['name'], $uid));
+    }
+   
+    if ($profile_field['type'] == 'date') {
+      if ($value !== 0) {
+        $value = unserialize($value);
+        $value = $value['year'] .'-'. $value['month'] .'-'. $value['day'];
+      }
+    }  
+    $profile_result[] = $value;
+  }
+  return $profile_result;
+}
+
+function _profile_csv_header() {
+  $row = array();
+
+  if (variable_get(PROFILE_CSV_PARAM .'uid', 0)) 
+    $row[] = '"uid"';
+
+  if (variable_get(PROFILE_CSV_PARAM .'name', 0)) 
+    $row[] = '"name"';
+
+  if (variable_get(PROFILE_CSV_PARAM .'mail', 0)) 
+    $row[] = '"mail"';
+
+  foreach (_profile_csv_get_profile_fields() as $field) {
+    $row[] = '"'. $field['title'] .'"';
+  }
+
+  return implode(",", $row) ."\n";
+}

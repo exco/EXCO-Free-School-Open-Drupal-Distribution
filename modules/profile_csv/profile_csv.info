@@ -1,0 +1,14 @@
+name = Profile csv
+description = "Allows exporting profile data in comma separated variable format."
+
+package = Other
+version = VERSION
+core = 6.x
+
+
+; Information added by drupal.org packaging script on 2008-07-21
+version = "6.x-1.x-dev"
+core = "6.x"
+project = "profile_csv"
+datestamp = "1216642134"
+

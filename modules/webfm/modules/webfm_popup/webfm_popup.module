@@ -1,0 +1,51 @@
+<?php
+// $Id: webfm_popup.module,v 1.3 2009/07/22 04:14:58 robmilne Exp $
+
+/**
+ * @file
+ * This module places the WebFM browser into a popup window for Rich Text Editors
+ */
+
+/**
+ * Implementation of hook_help()
+ */
+function webfm_popup_help($path, $arg) {
+  if ($path == 'admin/help#webfm_popup') {
+    $txt = "This module creates a popup for the webfm module. <br />
+    <h3>FCKEditor Usage</h3>
+    <ol>
+      <li>Go to admin/settings/fckeditor</li>
+      <li>Edit the profile you would like to use it.</li>
+      <li>Under Advanced options Enter the code below into the Custom javascript
+      configuration box.
+      <p>
+        <pre>
+          LinkBrowser= true;
+          ImageBrowser= true;
+          FlashBrowser= true;
+          LinkBrowserURL= getBasePath() + '?q=webfm_popup&webfmid=txtUrl';
+          ImageBrowserURL= getBasePath() + '?q=webfm_popup&webfmid=txtUrl';
+          FlashBrowserURL= getBasePath() + '?q=webfm_popup&webfmid=txtUrl';
+        </pre>
+      </p>
+      <p>
+        If you would like to use physical file paths then (no file security or
+        location independence) change 'webfmid=txtUrl' to 'url=txtUrl'.
+      </p>
+      </li>
+      <li>Click Save Configuration</li>
+    </ol>";
+    return '<p>'. t($txt) .'</p>';
+  }
+}
+
+/**
+ * Implementation of hook_webfm_extend_js()
+ */
+function webfm_popup_webfm_extend_js(){
+  if (arg(0) == 'webfm_popup') {
+    $modulepath = drupal_get_path('module', 'webfm_popup');
+    drupal_add_js($modulepath.'/webfm_popup.js');
+    drupal_add_js(array('webfm_popup' => array('fileDirectory' => file_directory_path())), 'setting');
+  }
+}

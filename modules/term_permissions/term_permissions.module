@@ -1,0 +1,385 @@
+<?php
+
+// $Id: term_permissions.module,v 1.4 2009/03/12 18:01:52 deviantintegral Exp $
+
+/**
+ * @file
+ * Allows access to terms in a vocabulary to be limited by user or role.
+ */
+
+/**
+ * Implementation of hook_form_alter()
+ *
+ * @param $form
+ *   The form to alter.
+ * @param $form_state
+ *   The form state of the current form.
+ * @param $form_id
+ *   The form id of the current form.
+ */
+function term_permissions_form_alter(&$form, $form_state, $form_id) {
+  // This is the add / edit term form from the taxonomy page.
+  if ($form_id == 'taxonomy_form_term') {
+    // Ensure that the Identification fieldset is at the top, as by default it
+    // has no weight specified.
+    $form['identification']['#weight'] = -15;
+    $form['advanced']['#weight'] = -10;
+
+    // TODO: Looks like IE7 broke tables in collapsed fieldsets in a point
+    // upgrade. Default the fieldset to be open and collapse it after the
+    // page load instead.
+    // http://drupal.org/node/247957
+    $form['access'] = array(
+      '#type' => 'fieldset',
+      '#title' => t('Permissions'),
+      '#description' => t('To limit selection of this term by user or roles, add users or roles to the following lists. Leave empty to allow selection by all users.'),
+      '#collapsible' => TRUE,
+      '#collapsed' => (strpos($_SERVER['HTTP_USER_AGENT'],'MSIE 7.0') !== FALSE) ? FALSE : TRUE,
+      '#attributes' => array('id' => 'fieldset_term_access'),
+      '#weight' => -5,
+      '#tree' => TRUE,
+    );
+    if (strpos($_SERVER['HTTP_USER_AGENT'],'MSIE 7.0') !== FALSE) {
+      // collapse the fieldset when the page is ready and the toggle works.
+      $js_code = "
+        if (Drupal.jsEnabled) {
+          $(document).ready(function() {
+            $('#fieldset_term_access').addClass('collapsed');
+          });
+        };
+      ";
+      drupal_add_js($js_code,'inline','footer');
+    }
+    // Note that the autocomplete widget will only enable for users with the
+    // 'access profiles' permission. Other users will have to specify the name
+    // manually.
+    $form['access']['search_user'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Add a User'),
+      '#description' => t('Enter a user name to add them to the list of allowed users for this term.'),
+      '#size' => 40,
+      '#autocomplete_path' => 'user/autocomplete',    
+    );
+
+    // Pull in any stored users in the database.
+    $result = db_query("SELECT uid FROM {term_permissions_user} WHERE tid = %d", $form['#term']['tid']);
+    while($uid = db_result($result)) {
+      $user = user_load($uid);
+      // We have to convert the user object to an array to store it within the
+      // form. Whenever $user is retrieved, it's converted to an object for
+      // consistency.
+      $form['access']['users'][$user->uid] = array(
+        '#type' => 'value',
+        '#value' => (array)$user,
+        'remove' => array(
+          '#type' => 'checkbox',
+          '#title' => t('Remove !user', array('!user' => $user->name)),
+        ),
+      );
+    }
+
+    // Now, lets do the Roles table.
+    $form['access']['add_role'] = array(
+      '#type' => 'select',
+      '#title' => t('Available Roles'),
+      '#description' => t('Add a role to allow all members of that role access to this term.'),
+      '#options' => array(-1 => t('- Select a role -')) + _term_permissions_roles($form['#term']['tid'], FALSE),
+      '#multiple' => FALSE,
+    );
+
+    $result = db_query("SELECT rid FROM {term_permissions_role} WHERE tid = %d", $form['#term']['tid']);
+    $roles = user_roles(TRUE);
+    while($rid = db_result($result)) {
+      $role = $roles[$rid];
+      $form['access']['roles'][$rid] = array(
+        '#type' => 'value',
+        '#value' => $role,
+        'remove' => array(
+          '#type' => 'checkbox',
+          '#title' => t('Remove !role', array('!role' => $role)),
+        ),
+      );
+    }
+
+    // Process any changes from previous submissions.
+    if ($form_state['values']['access']['users']) {
+      foreach($form_state['values']['access']['users'] as $uid => $user) {
+        $user = (object)$user;
+        // If the user checked off the remove checkbox, remove them from the
+        // table and add them to a list of users to remove from the database on
+        // submission.
+        if ($user->remove) {
+          $form['access']['remove_user'][$user->uid] = array(
+            '#type' => 'value',
+            '#value' => (array)$user,
+          );
+          unset($form['access']['users'][$user->uid]);
+        }
+        else {
+          // If the user was previously marked to be removed, ensure we don't
+          // drop it from the database.
+          unset($form['access']['remove_user'][$user->uid]);
+          $form['access']['users'][$uid] = array(
+            '#type' => 'value',
+            '#value' => (array)$user,
+            'remove' => array(
+              '#type' => 'checkbox',
+              '#title' => t('Remove !user', array('!user' => $user->name)),
+            ),
+          );
+        }
+      }
+    }
+
+    if ($form_state['values']['access']['roles']) {
+      foreach($form_state['values']['access']['roles'] as $rid => $role) {
+        if ($role['remove']) {
+          unset($form['access']['roles'][$rid]);
+          $form['access']['remove_role'][$rid] = array(
+            '#type' => 'value',
+            '#value' => $rid,
+          );
+        }
+        else {
+          $roles = user_roles(TRUE);
+          unset($form['access']['remove_role'][$rid]);
+          $form['access']['roles'][$rid] = array(
+            '#type' => 'value',
+            '#value' => (array)$rid,
+            'remove' => array(
+              '#type' => 'checkbox',
+              '#title' => t('Remove !role', array('!role' => $roles[$rid])),
+            ),
+          );
+        }
+      }
+    }
+
+    $form['access']['update_permissions'] = array(
+      '#type' => 'submit',
+      '#value' => t('Update Permissions'),
+      '#validate' => array('term_permissions_access_validate'),
+      '#submit' => array('term_permissions_access_submit'),
+      '#weight' => 10,
+    );
+
+    $form['access']['users']['#theme'] = 'term_permissions_users_table';
+    $form['access']['roles']['#theme'] = 'term_permissions_roles_table';
+    $form['#submit'][] = 'term_permissions_submit';
+  }
+
+  // This is the node add / edit form. If a different selector is used from
+  // another contributed module, we do nothing so as to not break the form.
+  if (isset($form['type']) && isset($form['#node']) && isset($form['taxonomy']) && (!variable_get('taxonomy_override_selector', FALSE)) && $form['type']['#value'] .'_node_form' == $form_id) {
+    foreach($form['taxonomy'] as $vid => $vocabulary) {
+      if (!is_array($vocabulary) || !isset($vocabulary['#options'])) {
+        continue;
+      }
+      foreach($vocabulary['#options'] as $terms) {
+        if (!isset($terms->option)) {
+          continue;
+        }
+        foreach($terms->option as $tid => $term) {
+          // Now we have the term ID, check to see if the current user has
+          // access to the term.
+          global $user;
+          if (!term_permissions_allowed($tid, $user)) {
+            unset($terms->option[$tid]);
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Theme the list of users allowed access to the current term.
+ *
+ * @param $form
+ *   The form array of allowed users.
+ * @return
+ *   The themed HTML of the allowed users list.
+ */
+function theme_term_permissions_users_table($form) {
+  $output = "";
+  $header = array(t('User'), t('Operations'));
+  $rows = array();
+  foreach(element_children($form) as $uid) {
+    $user = (object)$form[$uid]['#value'];
+    $row = array($user->name, drupal_render($form[$uid]['remove']));
+    $rows[] = $row;
+  }
+  if (!empty($rows)) {
+    $output .= theme('table', $header, $rows);
+  }
+  return $output;
+}
+
+/**
+ * Theme the list of roles allowed access to the current term.
+ *
+ * @param $form
+ *   The form array of allowed roles.
+ * @return
+ *   The themed HTML of the allowed roles list.
+ */
+function theme_term_permissions_roles_table($form) {
+  $output = "";
+  $header = array(t('Role'), t('Operations'));
+  $rows = array();
+  foreach(element_children($form) as $rid) {
+    $roles = user_roles(TRUE);
+    $row = array($roles[$rid], drupal_render($form[$rid]['remove']));
+    $rows[] = $row;
+  }
+  if (!empty($rows)) {
+    $output .= theme('table', $header, $rows);
+  }
+  return $output;
+}
+
+/**
+ * Validation function to ensure that the selected user exists.
+ *
+ * @param $form
+ *   The current form array.
+ * @param $form_state
+ *   The state of the current form.
+ */
+function term_permissions_access_validate($form, &$form_state) {
+  if (!empty($form_state['values']['access']['search_user'])) {
+    if (!(user_load(array('name' => $form_state['values']['access']['search_user'])))) {
+      form_set_error('search_user', t('The user %user does not exist.', array('%user' => $form_state['values']['access']['search_user'])));
+    }
+  }
+}
+
+/**
+ * Submit function to rebuild the form when the list of allowed users or roles
+ * has been changed.
+ *
+ * @param $form
+ *   The current form array.
+ * @param $form_state
+ *   The state of the current form.
+ */
+function term_permissions_access_submit($form, &$form_state) {
+  // If a user has been specified, add them to the table of users.
+  if (!empty($form_state['values']['access']['search_user'])) {
+    drupal_set_message(t('Press the Save button below to save changes to this term.'));
+    $user = user_load(array('name' => $form_state['values']['access']['search_user']));
+    $form_state['values']['access']['users'][$user->uid] = (array)$user;
+  }
+  // If a role has been specified, add that as well.
+  if ($form_state['values']['access']['add_role'] > -1) {
+    $rid = $form_state['values']['access']['add_role'];
+    $roles = user_roles(TRUE);
+    $role = $roles[$rid];
+    $form_state['values']['access']['roles'][$rid] = array($rid);
+  }
+  // Tell the Forms API that this form isn't ready to be submitted yet.
+  $form_state['rebuild'] = TRUE;
+}
+
+/**
+ * Additional submit function for the term form. This occurse when a term is
+ * added or updated.
+ *
+ * @param $form
+ *   The current form array.
+ * @param $form_state
+ *   The state of the current form.
+ */
+function term_permissions_submit($form, &$form_state) {
+  // Delete any users marked to be removed.
+  if (!empty($form_state['values']['access']['remove_user'])) {
+    foreach($form_state['values']['access']['remove_user'] as $user) {
+      $user = (object)$user;
+      db_query("DELETE FROM {term_permissions_user} WHERE tid = %d AND uid = %d", $form_state['values']['tid'], $user->uid);
+    }
+  }
+
+  // For each user, save the term ID and the user ID.
+  if (!empty($form_state['values']['access']['users'])) {
+    foreach($form_state['values']['access']['users'] as $user) {
+      $user = (object)$user;
+      db_query("INSERT IGNORE INTO {term_permissions_user} (tid, uid) VALUES (%d, %d)", $form_state['values']['tid'], $user->uid);
+    }
+  }
+
+  // Delete any roles marked to be removed.
+  if (!empty($form_state['values']['access']['remove_role'])) {
+    foreach($form_state['values']['access']['remove_role'] as $rid) {
+      db_query("DELETE FROM {term_permissions_role} WHERE tid = %d AND rid = %d", $form_state['values']['tid'], $rid);
+    }
+  }
+
+  // For each role, save the term ID and the role ID.
+  if (!empty($form_state['values']['access']['roles'])) {
+    foreach($form_state['values']['access']['roles'] as $rid => $role) {
+      db_query("INSERT IGNORE INTO {term_permissions_role} (tid, rid) VALUES (%d, %d)", $form_state['values']['tid'], $rid);
+    }
+  }
+}
+
+/**
+ * Implementation of hook_theme().
+ */
+function term_permissions_theme($existing, $type, $theme, $path) {
+  return array(
+    'term_permissions_users_table' => array('form' => NULL),
+    'term_permissions_roles_table' => array('form' => NULL),
+  );
+}
+
+/**
+ * Return an array of roles related to a term.
+ *
+ * @param $tid
+ *   The term ID to look up.
+ * @param $assigned
+ *   Return roles assigned to the term if TRUE, or return roles not assigned to
+ *   the term if FALSE.
+ * @return
+ *   An array of roles related to a term.
+ */
+function _term_permissions_roles($tid, $assigned = TRUE) {
+  $result = db_query("SELECT rid FROM {term_permissions_role} WHERE tid = %d", $tid);
+  $roles = user_roles(TRUE);
+  $term_roles = array();
+  while($rid = db_result($result)) {
+    $term_roles[] = $roles[$rid];
+  }
+  if ($assigned) {
+    return $term_roles;
+  }
+  return array_diff_key($roles, $term_roles);
+}
+
+/**
+ * Given a term ID, determine if a user has access to that term. UID 1 is
+ * always allowed access. If no permissions are set on the term, allow
+ * access by default.
+ *
+ * @param $tid
+ *   The term ID to look up.
+ * @param $user
+ *   The user to determine if it has access to the term ID.
+ * @return bool
+ *   TRUE if the user has access to the term, otherwise FALSE.
+ */
+function term_permissions_allowed($tid, $user) {
+  if ($user->uid == 1) {
+    return TRUE;
+  }
+  // Are permissions enabled on this term?
+  if (!(db_result(db_query("SELECT COUNT(1) FROM {term_permissions_user} WHERE tid = %d", $tid)) || db_result(db_query("SELECT COUNT(1) FROM {term_permissions_role} WHERE tid = %d", $tid)))) {
+    return TRUE;
+  }
+  // Permissions are enabled, check to see if this user or one of their roles
+  // is allowed.
+  if (db_result(db_query("SELECT uid FROM {term_permissions_user} WHERE tid = %d AND uid = %d", $tid, $user->uid)) || db_result(db_query("SELECT rid FROM {term_permissions_role} WHERE tid = %d AND rid IN (" . implode(', ', array_keys($user->roles)) . ")", $tid))) {
+    return TRUE;
+  }
+  return FALSE;
+}

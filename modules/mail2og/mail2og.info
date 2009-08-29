@@ -1,0 +1,13 @@
+; $Id: mail2og.info,v 1.1 2009/06/10 14:04:37 arthuregg Exp $
+name = Mail to Organic Groups
+description = Gateway module for creating OG content by email
+package = "Notifications"
+dependencies[] = mailhandler
+dependencies[] = og
+core = 6.x
+; Information added by drupal.org packaging script on 2009-07-01
+version = "6.x-1.x-dev"
+core = "6.x"
+project = "mail2og"
+datestamp = "1246407369"
+

@@ -1,0 +1,18 @@
+; $Id$
+name = exco 
+description = Minimalist tabled theme with light colors.
+regions[left] = Left sidebar
+regions[right] = Right sidebar
+features[] = logo
+features[] = favicon
+features[] = name
+features[] = slogan
+stylesheets[all][] = style.css
+version = VERSION
+core = 6.x
+
+; Information added by drupal.org packaging script on 2009-02-25
+version = "6.10"
+project = "drupal"
+datestamp = "1235596218"
+

@@ -1,0 +1,19 @@
+/* @override 
+	http://yui.yahooapis.com/2.6.0/build/autocomplete/assets/skins/sam/autocomplete.css
+	http://yui.yahooapis.com/2.6.0/build/editor/assets/skins/sam/editor.css
+*/
+
+div.form-item {
+}
+
+table.content-multiple-table {
+	margin-top: 3em;
+}
+
+fieldset {
+	margin-top: 3em;
+}
+
+div.adr em{
+	display: block;
+}
